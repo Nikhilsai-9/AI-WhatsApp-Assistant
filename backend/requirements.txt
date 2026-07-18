@@ -35,8 +35,6 @@ openai-whisper==20231117
 redis==5.0.7
 
 # Logging
-pino==9.2.0
-pino-httplog==0.2.0
 structlog==24.2.0
 
 # Utils
