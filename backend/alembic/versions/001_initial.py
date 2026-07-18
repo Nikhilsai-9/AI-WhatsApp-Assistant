@@ -24,14 +24,25 @@ def upgrade() -> None:
     op.execute('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"')
     op.execute("CREATE EXTENSION IF NOT EXISTS vector")
 
-    # ─── enums ──────────────────────────────────────────────────
-    op.execute("CREATE TYPE consent_status_enum AS ENUM ('pending','approved','denied','blocked')")
-    op.execute("CREATE TYPE chat_type_enum AS ENUM ('individual','group','broadcast','channel')")
-    op.execute("CREATE TYPE message_type_enum AS ENUM ('text','image','video','audio','voice','document','sticker','gif','location','contact','system','reaction')")
-    op.execute("CREATE TYPE message_direction_enum AS ENUM ('incoming','outgoing')")
-    op.execute("CREATE TYPE memory_type_enum AS ENUM ('short_term','long_term','episodic','semantic','working')")
-    op.execute("CREATE TYPE reply_mode_enum AS ENUM ('auto','manual','scheduled')")
-    op.execute("CREATE TYPE reply_delay_enum AS ENUM ('instant','fast','normal','slow')")
+    # ─── enums (idempotent: skip if the type already exists) ─────
+    def create_enum(name: str, values: str) -> None:
+        op.execute(
+            "DO " + "$do$" + "\n"
+            "BEGIN\n"
+            f"    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = '{name}') THEN\n"
+            f"        CREATE TYPE {name} AS ENUM ({values});\n"
+            "    END IF;\n"
+            "END\n"
+            + "$do$" + ";"
+        )
+
+    create_enum("consent_status_enum", "'pending','approved','denied','blocked'")
+    create_enum("chat_type_enum", "'individual','group','broadcast','channel'")
+    create_enum("message_type_enum", "'text','image','video','audio','voice','document','sticker','gif','location','contact','system','reaction'")
+    create_enum("message_direction_enum", "'incoming','outgoing'")
+    create_enum("memory_type_enum", "'short_term','long_term','episodic','semantic','working'")
+    create_enum("reply_mode_enum", "'auto','manual','scheduled'")
+    create_enum("reply_delay_enum", "'instant','fast','normal','slow'")
 
     # ─── users ──────────────────────────────────────────────────
     op.create_table(
@@ -60,7 +71,7 @@ def upgrade() -> None:
         sa.Column("display_name", sa.String(255), nullable=True),
         sa.Column("first_seen_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
         sa.Column("last_seen_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.Column("consent_status", sa.Enum("pending","approved","denied","blocked", name="consent_status_enum"), nullable=False, server_default="pending"),
+        sa.Column("consent_status", sa.Enum("pending","approved","denied","blocked", name="consent_status_enum", create_type=False), nullable=False, server_default="pending"),
         sa.Column("consent_given_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("relationship_type", sa.String(50), nullable=True),
         sa.Column("notes", sa.Text, nullable=True),
@@ -78,7 +89,7 @@ def upgrade() -> None:
         sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("uuid_generate_v4()")),
         sa.Column("contact_id", UUID(as_uuid=True), sa.ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False),
         sa.Column("whatsapp_chat_id", sa.String(100), unique=True, nullable=False),
-        sa.Column("chat_type", sa.Enum("individual","group","broadcast","channel", name="chat_type_enum"), nullable=False, server_default="individual"),
+        sa.Column("chat_type", sa.Enum("individual","group","broadcast","channel", name="chat_type_enum", create_type=False), nullable=False, server_default="individual"),
         sa.Column("subject", sa.String(255), nullable=True),
         sa.Column("unread_count", sa.Integer, nullable=False, server_default="0"),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
@@ -93,8 +104,8 @@ def upgrade() -> None:
         sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("uuid_generate_v4()")),
         sa.Column("chat_id", UUID(as_uuid=True), sa.ForeignKey("chats.id", ondelete="CASCADE"), nullable=False),
         sa.Column("whatsapp_message_id", sa.String(100), unique=True, nullable=False),
-        sa.Column("direction", sa.Enum("incoming","outgoing", name="message_direction_enum"), nullable=False),
-        sa.Column("message_type", sa.Enum("text","image","video","audio","voice","document","sticker","gif","location","contact","system","reaction", name="message_type_enum"), nullable=False, server_default="text"),
+        sa.Column("direction", sa.Enum("incoming","outgoing", name="message_direction_enum", create_type=False), nullable=False),
+        sa.Column("message_type", sa.Enum("text","image","video","audio","voice","document","sticker","gif","location","contact","system","reaction", name="message_type_enum", create_type=False), nullable=False, server_default="text"),
         sa.Column("timestamp", sa.DateTime(timezone=True), nullable=False),
         sa.Column("text_content", sa.Text, nullable=True),
         sa.Column("media_url", sa.String(500), nullable=True),
@@ -123,7 +134,7 @@ def upgrade() -> None:
         sa.Column("embedding", VECTOR(384), nullable=False),
         sa.Column("content", sa.Text, nullable=False),
         sa.Column("summary", sa.String(500), nullable=True),
-        sa.Column("memory_type", sa.Enum("short_term","long_term","episodic","semantic","working", name="memory_type_enum"), nullable=False, server_default="long_term"),
+        sa.Column("memory_type", sa.Enum("short_term","long_term","episodic","semantic","working", name="memory_type_enum", create_type=False), nullable=False, server_default="long_term"),
         sa.Column("importance_score", sa.Float, nullable=False, server_default="5.0"),
         sa.Column("access_count", sa.Integer, nullable=False, server_default="0"),
         sa.Column("last_accessed_at", sa.DateTime(timezone=True), nullable=True),
@@ -171,8 +182,8 @@ def upgrade() -> None:
         "user_settings",
         sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("uuid_generate_v4()")),
         sa.Column("user_id", UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False),
-        sa.Column("reply_mode", sa.Enum("auto","manual","scheduled", name="reply_mode_enum"), nullable=False, server_default="auto"),
-        sa.Column("reply_delay", sa.Enum("instant","fast","normal","slow", name="reply_delay_enum"), nullable=False, server_default="normal"),
+        sa.Column("reply_mode", sa.Enum("auto","manual","scheduled", name="reply_mode_enum", create_type=False), nullable=False, server_default="auto"),
+        sa.Column("reply_delay", sa.Enum("instant","fast","normal","slow", name="reply_delay_enum", create_type=False), nullable=False, server_default="normal"),
         sa.Column("reply_delay_seconds", sa.Integer, nullable=False, server_default="60"),
         sa.Column("preferred_language", sa.String(20), nullable=False, server_default="teluglish"),
         sa.Column("generate_voice_replies", sa.Boolean, nullable=False, server_default="false"),
