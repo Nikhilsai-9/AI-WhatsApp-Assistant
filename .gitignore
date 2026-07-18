@@ -1,0 +1,69 @@
+# ────────────────────────────────────────────────────────────────
+# AI WhatsApp Personal Assistant — .gitignore
+# ────────────────────────────────────────────────────────────────
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.tox/
+.venv/
+venv/
+env/
+
+# Node
+node_modules/
+.pnpm-store/
+.next/
+.turbo/
+.swc/
+dist/
+build/
+*.tsbuildinfo
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/settings.json.example
+!.vscode/extensions.json
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Data (never commit)
+data/
+sessions/
+media/
+pgdata/
+redisdata/
+
+# Secrets
+secrets/
+*.pem
+*.key
+*.crt
+certs/
+
+# OS
+Thumbs.db
+desktop.ini
+
+# Docker
+.docker/
