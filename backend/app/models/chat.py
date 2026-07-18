@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import enum
+import uuid
 
 from sqlalchemy import Enum, ForeignKey, Index, String
 from sqlalchemy.dialects.postgresql import UUID

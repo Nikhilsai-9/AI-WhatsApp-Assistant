@@ -10,7 +10,8 @@ from typing import Sequence
 
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import UUID, JSONB, VECTOR
+from sqlalchemy.dialects.postgresql import UUID, JSONB
+from pgvector.sqlalchemy import VECTOR
 
 revision: str = "001"
 down_revision: str | None = None

@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import enum
+import uuid
+from datetime import datetime
 
 from sqlalchemy import (
+    DateTime,
     Enum,
     Float,
     ForeignKey,
@@ -13,8 +16,9 @@ from sqlalchemy import (
     String,
     Text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID, Vector
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from pgvector.sqlalchemy import Vector
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
 
