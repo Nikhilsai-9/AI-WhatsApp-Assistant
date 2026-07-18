@@ -20,6 +20,10 @@ depends_on: Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    # ─── extensions ─────────────────────────────────────────────
+    op.execute('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"')
+    op.execute("CREATE EXTENSION IF NOT EXISTS vector")
+
     # ─── enums ──────────────────────────────────────────────────
     op.execute("CREATE TYPE consent_status_enum AS ENUM ('pending','approved','denied','blocked')")
     op.execute("CREATE TYPE chat_type_enum AS ENUM ('individual','group','broadcast','channel')")
