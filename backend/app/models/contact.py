@@ -65,7 +65,7 @@ class Contact(UUIDMixin, TimestampMixin, Base):
 
     # Consent
     consent_status: Mapped[ConsentStatus] = mapped_column(
-        Enum(ConsentStatus, name="consent_status_enum"),
+        Enum(ConsentStatus, name="consent_status_enum", create_type=False),
         default=ConsentStatus.PENDING,
         nullable=False,
     )

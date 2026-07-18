@@ -60,7 +60,7 @@ class Memory(UUIDMixin, TimestampMixin, Base):
     summary: Mapped[str | None] = mapped_column(String(500), default=None)
 
     memory_type: Mapped[MemoryType] = mapped_column(
-        Enum(MemoryType, name="memory_type_enum"),
+        Enum(MemoryType, name="memory_type_enum", create_type=False),
         default=MemoryType.LONG_TERM,
         nullable=False,
     )

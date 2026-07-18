@@ -42,7 +42,7 @@ class Chat(UUIDMixin, TimestampMixin, Base):
     )
 
     chat_type: Mapped[ChatType] = mapped_column(
-        Enum(ChatType, name="chat_type_enum"),
+        Enum(ChatType, name="chat_type_enum", create_type=False),
         default=ChatType.INDIVIDUAL,
         nullable=False,
     )

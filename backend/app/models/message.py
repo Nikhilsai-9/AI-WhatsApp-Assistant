@@ -68,12 +68,12 @@ class Message(UUIDMixin, Base):
     )
 
     direction: Mapped[MessageDirection] = mapped_column(
-        Enum(MessageDirection, name="message_direction_enum"),
+        Enum(MessageDirection, name="message_direction_enum", create_type=False),
         nullable=False,
     )
 
     message_type: Mapped[MessageType] = mapped_column(
-        Enum(MessageType, name="message_type_enum"),
+        Enum(MessageType, name="message_type_enum", create_type=False),
         default=MessageType.TEXT,
         nullable=False,
     )

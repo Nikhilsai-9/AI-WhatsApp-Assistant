@@ -46,12 +46,12 @@ class UserSettings(UUIDMixin, Base):
 
     # ─── Reply behaviour ────────────────────────────────────────
     reply_mode: Mapped[ReplyMode] = mapped_column(
-        Enum(ReplyMode, name="reply_mode_enum"),
+        Enum(ReplyMode, name="reply_mode_enum", create_type=False),
         default=ReplyMode.AUTO,
         nullable=False,
     )
     reply_delay: Mapped[ReplyDelay] = mapped_column(
-        Enum(ReplyDelay, name="reply_delay_enum"),
+        Enum(ReplyDelay, name="reply_delay_enum", create_type=False),
         default=ReplyDelay.NORMAL,
         nullable=False,
     )
