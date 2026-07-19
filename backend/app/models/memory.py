@@ -41,11 +41,18 @@ class Memory(UUIDMixin, TimestampMixin, Base):
 
     __tablename__ = "memories"
     __table_args__ = (
-        # pgvector index for semantic similarity search
-        Index("ix_memories_embedding", "embedding", postgresql_using="hnsw",
-              postgresql_with={"dims": 384, "m": 16, "ef_construction": 64}),
-        Index("ix_memories_contact_type", "contact_id", "memory_type"),
-        Index("ix_memories_importance", "importance_score"),
+        # pgvector HNSW index for semantic similarity search (idempotent)
+        Index(
+            "ix_memories_embedding",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_with={"dims": 384, "m": 16, "ef_construction": 64},
+            postgresql_if_not_exists=True,
+        ),
+        Index("ix_memories_contact_type", "contact_id", "memory_type",
+              postgresql_if_not_exists=True),
+        Index("ix_memories_importance", "importance_score",
+              postgresql_if_not_exists=True),
     )
 
     contact_id: Mapped[uuid.UUID | None] = mapped_column(
