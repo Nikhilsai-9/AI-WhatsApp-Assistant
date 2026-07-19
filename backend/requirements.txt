@@ -13,6 +13,7 @@ alembic==1.13.2
 # Auth
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
+bcrypt==4.0.1  # Pinned — bcrypt 4.1+ breaks passlib's backend detection
 python-multipart==0.0.9
 
 # AI
@@ -40,3 +41,8 @@ structlog==24.2.0
 # Utils
 python-dotenv==1.0.1
 email-validator==2.1.1
+
+# Testing (kept in main file so Railway containers can run `pytest tests/` during build)
+pytest==8.2.2
+pytest-asyncio==0.23.7
+aiosqlite==0.20.0

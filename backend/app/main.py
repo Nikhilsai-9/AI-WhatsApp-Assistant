@@ -27,6 +27,7 @@ from fastapi.responses import JSONResponse
 from app.api import api_router
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.core.security_headers import SecurityHeadersMiddleware
 
 logger = get_logger(__name__)
 
@@ -134,6 +135,12 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+# Security headers (HSTS, X-Frame-Options, etc.) — applied last so it
+# affects every response including those modified by earlier middleware.
+app.add_middleware(
+    SecurityHeadersMiddleware,
+    is_production=settings.environment == "production",
 )
 
 # ─── Routers ────────────────────────────────────────────────────
