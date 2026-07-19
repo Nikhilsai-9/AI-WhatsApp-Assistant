@@ -40,19 +40,22 @@ class Memory(UUIDMixin, TimestampMixin, Base):
     """
 
     __tablename__ = "memories"
+    # NOTE on index idempotency:
+    # ``postgresql_if_not_exists`` is an *alembic-only* kwarg that is NOT
+    # accepted by the model-level ``sqlalchemy.Index(...)`` constructor
+    # (raises ``ArgumentError`` at import time and crashes Alembic).
+    # Idempotency of these indexes is handled inside the migration scripts
+    # via ``op.create_index(..., postgresql_if_not_exists=True)``.
     __table_args__ = (
-        # pgvector HNSW index for semantic similarity search (idempotent)
+        # pgvector HNSW index for semantic similarity search
         Index(
             "ix_memories_embedding",
             "embedding",
             postgresql_using="hnsw",
             postgresql_with={"dims": 384, "m": 16, "ef_construction": 64},
-            postgresql_if_not_exists=True,
         ),
-        Index("ix_memories_contact_type", "contact_id", "memory_type",
-              postgresql_if_not_exists=True),
-        Index("ix_memories_importance", "importance_score",
-              postgresql_if_not_exists=True),
+        Index("ix_memories_contact_type", "contact_id", "memory_type"),
+        Index("ix_memories_importance", "importance_score"),
     )
 
     contact_id: Mapped[uuid.UUID | None] = mapped_column(
