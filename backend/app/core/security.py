@@ -36,13 +36,25 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _sign(payload: dict[str, Any]) -> str:
+    """Sign a JWT payload with the configured algorithm/secret."""
+    secret = settings.jwt_secret or settings.app_secret
+    return jwt.encode(payload, secret, algorithm=settings.jwt_algorithm)
+
+
 def create_access_token(
     subject: str | int,
     *,
     expires_delta: timedelta | None = None,
     extra_claims: dict[str, Any] | None = None,
+    extra: dict[str, Any] | None = None,  # alias for compatibility
+    token_version: int | None = None,
 ) -> str:
-    """Sign a short-lived access token."""
+    """Sign a short-lived access token.
+
+    Both ``extra_claims`` and the legacy ``extra`` keyword are accepted so
+    that call sites can pass ``extra={"tv": user.token_version}``.
+    """
     if expires_delta is None:
         expires_delta = timedelta(minutes=settings.jwt_access_token_expire_minutes)
     payload: dict[str, Any] = {
@@ -51,12 +63,21 @@ def create_access_token(
         "exp": int((_now() + expires_delta).timestamp()),
         "type": "access",
     }
-    if extra_claims:
-        payload.update(extra_claims)
-    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+    merged = extra_claims or extra
+    if merged:
+        payload.update(merged)
+    elif token_version is not None:
+        payload["tv"] = token_version
+    return _sign(payload)
 
 
-def create_refresh_token(subject: str | int) -> str:
+def create_refresh_token(
+    subject: str | int,
+    *,
+    extra_claims: dict[str, Any] | None = None,
+    extra: dict[str, Any] | None = None,
+) -> str:
+    """Sign a long-lived refresh token."""
     payload = {
         "sub": str(subject),
         "iat": int(_now().timestamp()),
@@ -68,14 +89,18 @@ def create_refresh_token(subject: str | int) -> str:
         "type": "refresh",
         "jti": secrets.token_hex(16),
     }
-    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+    merged = extra_claims or extra
+    if merged:
+        payload.update(merged)
+    return _sign(payload)
 
 
 def decode_token(token: str, *, expected_type: str | None = None) -> dict[str, Any]:
     """Decode + validate.  Raises ``jwt.PyJWTError`` on failure."""
+    secret = settings.jwt_secret or settings.app_secret
     payload = jwt.decode(
         token,
-        settings.jwt_secret,
+        secret,
         algorithms=[settings.jwt_algorithm],
     )
     if expected_type and payload.get("type") != expected_type:
@@ -87,7 +112,7 @@ def decode_token(token: str, *, expected_type: str | None = None) -> dict[str, A
 def _fernet() -> Fernet:
     key = settings.encryption_key
     if not key:
-        # Derive from APP_SECRET if explicit key absent (first boot convenience)
+        # Derive from APP_SECRET/JWT_SECRET if explicit key absent (first-boot convenience)
         derived = base64.urlsafe_b64encode(
             hashlib.sha256(settings.app_secret.encode()).digest()
         )

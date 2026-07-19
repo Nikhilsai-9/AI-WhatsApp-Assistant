@@ -11,7 +11,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, PostgresDsn, RedisDsn, field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -40,8 +40,6 @@ class Settings(BaseSettings):
     app_owner_email: str = ""
 
     # ─── Secrets ────────────────────────────────────────────────
-    # Allow these to be empty in dev; required in production. We use
-    # `default_factory` so they remain valid for unit tests.
     app_secret: str = Field(
         default_factory=_generate_dev_secret,
         min_length=32,
@@ -93,8 +91,18 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     openrouter_model: str = "anthropic/claude-3.5-sonnet"
 
-    minmax_api_key: str = ""
-    minmax_model: str = "MiniMax-Text-01"
+    # MiniMax provider (Minimax M-series)
+    minimax_api_key: str = ""
+    minimax_model: str = "MiniMax-Text-01"
+
+    # Backwards-compat: older settings referenced the typo'd names.
+    @property
+    def minmax_api_key(self) -> str:
+        return self.minimax_api_key
+
+    @property
+    def minmax_model(self) -> str:
+        return self.minimax_model
 
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.1"
@@ -141,6 +149,16 @@ class Settings(BaseSettings):
     smtp_user: str = ""
     smtp_password: str = ""
     smtp_from: str = ""
+
+    # Backwards-compat alias used by older code that referenced
+    # ``settings.smtp_username``.
+    @property
+    def smtp_username(self) -> str:
+        return self.smtp_user
+
+    # ─── SendGrid ───────────────────────────────────────────────
+    sendgrid_api_key: str = ""
+    sendgrid_from: str = ""
 
     # ─── Derived helpers ────────────────────────────────────────
     @field_validator("database_url", mode="before")
@@ -218,7 +236,6 @@ class Settings(BaseSettings):
                 o = o.strip()
                 if o and o not in origins:
                     origins.append(o)
-        # In production, restrict to configured URLs.
         if self.is_production:
             return [o for o in origins if "localhost" not in o and "127.0.0.1" not in o] or [self.app_url]
         return origins
@@ -228,18 +245,6 @@ class Settings(BaseSettings):
         p = Path(self.storage_path)
         p.mkdir(parents=True, exist_ok=True)
         return p
-
-    def model_post_init(self, __context) -> None:
-        """Post-init validation — ensure required production secrets are present."""
-        if self.is_production:
-            # If the default random secret survived, refuse to start.
-            # We can't actually detect "is random default" — but we
-            # at least enforce a minimum length, which the Field
-            # already guarantees.
-            if len(self.jwt_secret) < 32:
-                raise ValueError("jwt_secret must be at least 32 chars in production")
-            if len(self.app_secret) < 32:
-                raise ValueError("app_secret must be at least 32 chars in production")
 
 
 @lru_cache(maxsize=1)

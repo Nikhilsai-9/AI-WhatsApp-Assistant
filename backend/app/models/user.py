@@ -13,6 +13,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
+    from app.models.chat_restriction import ChatRestriction
     from app.models.contact import Contact
     from app.models.settings import UserSettings
     from app.models.audit import AuditLog
@@ -42,6 +43,8 @@ class User(UUIDMixin, TimestampMixin, Base):
     is_superuser: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_ai_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Soft pause (distinct from emergency stop and from disable).
+    is_ai_paused: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Auth bookkeeping
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -72,6 +75,11 @@ class User(UUIDMixin, TimestampMixin, Base):
     )
     audit_logs: Mapped[list["AuditLog"]] = relationship(
         "AuditLog",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    chat_restrictions: Mapped[list["ChatRestriction"]] = relationship(
+        "ChatRestriction",
         back_populates="user",
         cascade="all, delete-orphan",
     )

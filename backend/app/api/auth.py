@@ -23,15 +23,14 @@ Endpoints (mounted under /api/auth):
 from __future__ import annotations
 
 import hashlib
-import hmac
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
+import jwt as pyjwt
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -65,18 +64,24 @@ from app.services.email import send_password_reset_email, send_verification_emai
 from app.services.google_oauth import verify_google_token
 
 logger = get_logger(__name__)
-# No prefix here — the api/__init__ router already adds the /auth prefix.
+
 router = APIRouter(tags=["auth"])
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"/api/auth/login", auto_error=False)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
 
 # ─── Helpers ────────────────────────────────────────────────────
+def _signing_secret() -> str:
+    return settings.jwt_secret or settings.app_secret
+
+
 def _issue_tokens(user: User) -> tuple[str, str, int]:
     """Create (access, refresh, expires_in_seconds)."""
-    access = create_access_token(subject=str(user.id), extra={"tv": user.token_version})
-    refresh = create_refresh_token(subject=str(user.id), extra={"tv": user.token_version})
-    return access, refresh, settings.access_token_expire_minutes * 60
+    tv = getattr(user, "token_version", 0) or 0
+    access = create_access_token(subject=str(user.id), extra={"tv": tv})
+    refresh = create_refresh_token(subject=str(user.id), extra={"tv": tv})
+    expires = settings.jwt_access_token_expire_minutes * 60
+    return access, refresh, expires
 
 
 def _user_to_response(user: User) -> UserResponse:
@@ -86,13 +91,13 @@ def _user_to_response(user: User) -> UserResponse:
         full_name=user.full_name,
         phone_number=user.phone_number,
         avatar_url=user.avatar_url,
-        is_active=user.is_active,
-        is_verified=user.is_verified,
-        email_verified=user.email_verified,
-        is_ai_enabled=user.is_ai_enabled,
-        ai_emergency_stop=user.ai_emergency_stop,
+        is_active=getattr(user, "is_active", True),
+        is_verified=getattr(user, "is_verified", False),
+        email_verified=getattr(user, "email_verified", False),
+        is_ai_enabled=getattr(user, "is_ai_enabled", True),
+        ai_emergency_stop=getattr(user, "ai_emergency_stop", False),
         created_at=user.created_at,
-        last_login_at=user.last_login_at,
+        last_login_at=getattr(user, "last_login_at", None),
     )
 
 
@@ -103,12 +108,12 @@ async def get_current_user(
     if not token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not authenticated")
     try:
-        payload = jwt.decode(
+        payload = pyjwt.decode(
             token,
-            settings.secret_key,
+            _signing_secret(),
             algorithms=[settings.jwt_algorithm],
         )
-    except JWTError as exc:
+    except pyjwt.PyJWTError as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"Invalid token: {exc}") from exc
 
     sub = payload.get("sub")
@@ -123,9 +128,9 @@ async def get_current_user(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid token subject")
 
     user = await db.get(User, user_id)
-    if not user or not user.is_active:
+    if not user or not getattr(user, "is_active", True):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found or disabled")
-    if user.token_version != tv:
+    if getattr(user, "token_version", 0) != tv:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token revoked")
     return user
 
@@ -164,6 +169,7 @@ async def register(
         phone_number=body.phone_number,
         is_active=True,
         email_verified=False,
+        is_verified=False,
         is_ai_enabled=True,
     )
     db.add(user)
@@ -206,7 +212,7 @@ async def login(
     placeholder = hash_password("__placeholder__")
     if not user or not verify_password(body.password, user.hashed_password or placeholder):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid email or password")
-    if not user.is_active:
+    if not getattr(user, "is_active", True):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Account disabled")
 
     user.last_login_at = datetime.now(timezone.utc)
@@ -230,12 +236,12 @@ async def refresh(
     _rl: Annotated[None, Depends(rate_limit_dependency(max_requests=15, window_seconds=60))],
 ) -> AuthResponse:
     try:
-        payload = jwt.decode(
+        payload = pyjwt.decode(
             body.refresh_token,
-            settings.secret_key,
+            _signing_secret(),
             algorithms=[settings.jwt_algorithm],
         )
-    except JWTError as exc:
+    except pyjwt.PyJWTError as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"Invalid token: {exc}") from exc
 
     if payload.get("type") != "refresh":
@@ -247,9 +253,9 @@ async def refresh(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid token subject")
 
     user = await db.get(User, user_id)
-    if not user or not user.is_active:
+    if not user or not getattr(user, "is_active", True):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found")
-    if user.token_version != payload.get("tv", 0):
+    if getattr(user, "token_version", 0) != payload.get("tv", 0):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Refresh token revoked")
 
     access, new_refresh, expires = _issue_tokens(user)
@@ -264,7 +270,6 @@ async def refresh(
 # ─── Logout ─────────────────────────────────────────────────────
 @router.post("/logout", response_model=MessageResponse)
 async def logout(_: Annotated[User, Depends(get_current_user)]) -> MessageResponse:
-    # JWTs are stateless; revocation happens via token_version bump (logout-all).
     return MessageResponse(message="Logged out")
 
 
@@ -273,7 +278,7 @@ async def logout_all(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> MessageResponse:
-    user.token_version = user.token_version + 1
+    user.token_version = (user.token_version or 0) + 1
     await db.commit()
     return MessageResponse(message="All sessions revoked")
 
@@ -288,7 +293,6 @@ async def google_login(
     if not body.has_any():
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "id_token or access_token required")
     if not settings.google_client_id:
-        # Still allow login if the user supplied a verified token, but warn.
         logger.warning("google_login_without_client_id")
 
     try:
@@ -345,7 +349,7 @@ async def forgot_password(
 ) -> MessageResponse:
     """Always respond with the same message to avoid account enumeration."""
     user = await _find_by_email(db, body.email.lower())
-    if user and user.is_active:
+    if user and getattr(user, "is_active", True):
         token = secrets.token_urlsafe(48)
         user.password_reset_token = hashlib.sha256(token.encode()).hexdigest()
         user.password_reset_expires = datetime.now(timezone.utc) + timedelta(hours=1)
@@ -380,7 +384,7 @@ async def reset_password(
     user.hashed_password = hash_password(body.new_password)
     user.password_reset_token = None
     user.password_reset_expires = None
-    user.token_version = user.token_version + 1  # revoke all existing tokens
+    user.token_version = (user.token_version or 0) + 1
     await db.commit()
     return MessageResponse(message="Password updated")
 
@@ -438,7 +442,6 @@ async def update_me(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> UserResponse:
-    # Only allow safe, scalar fields
     allowed = {"full_name", "phone_number", "avatar_url", "is_ai_enabled"}
     for k, v in payload.items():
         if k in allowed:
@@ -459,7 +462,7 @@ async def change_password(
     if not verify_password(body.current_password, user.hashed_password or placeholder):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Current password is incorrect")
     user.hashed_password = hash_password(body.new_password)
-    user.token_version = user.token_version + 1  # revoke all other tokens
+    user.token_version = (user.token_version or 0) + 1
     await db.commit()
     return MessageResponse(message="Password changed")
 
@@ -475,7 +478,6 @@ async def emergency_stop(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> MessageResponse:
-    """Set or clear the emergency AI stop flag."""
     user.ai_emergency_stop = body.enabled
     if body.enabled:
         user.is_ai_enabled = False
